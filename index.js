@@ -6,6 +6,7 @@ const { incrementMessages } = require('./utils/levels');
 const { recordJoin, recordLeave } = require('./utils/invites');
 const { getConfig } = require('./utils/config');
 const { handleTicketOpen, handleTicketClose } = require('./utils/tickets');
+const InviteTracker = require('./utils/InviteTracker');
 
 // Create client
 const client = new Client({
@@ -14,6 +15,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildInvites
   ]
 });
@@ -28,12 +30,8 @@ client.snipeCache = new Map();
 // XP cooldown: `guildId-userId` -> timestamp
 client.xpCooldowns = new Map();
 
-// Invite cache: guildId -> Map(code -> invite)
-client.inviteCache = new Map();
-
-// Deleted invite buffer: guildId -> Map(code -> invite)
-// Holds invites deleted by Discord (single-use) until GuildMemberAdd can read them
-client.deletedInviteBuffer = new Map();
+// Invite tracker
+const inviteTracker = new InviteTracker(client);
 
 // Load commands
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
@@ -50,14 +48,7 @@ client.once(Events.ClientReady, async () => {
   console.log(`📁 Loaded ${client.prefixCommands.size} prefix commands`);
   console.log(`🔧 Prefix: ${config.prefix}`);
 
-  // Cache all guild invites
-  for (const [, guild] of client.guilds.cache) {
-    const invites = await guild.invites.fetch().catch(() => null);
-    if (invites) {
-      client.inviteCache.set(guild.id, new Map(invites.map(inv => [inv.code, inv])));
-      console.log(`📨 Cached ${invites.size} invites for ${guild.name}`);
-    }
-  }
+  await inviteTracker.initializeCache();
 });
 
 // ─── Event: Welcome + invite tracking on member join ─────────────────────────
@@ -65,76 +56,8 @@ client.on(Events.GuildMemberAdd, async member => {
   // Welcome message
   await handleWelcome(member);
 
-  let usedInvite = null;
-  let inviterId   = 'unknown';
-  let inviteCode  = 'unknown';
-  let isVanity    = false;
-
-  try {
-    const guild = member.guild;
-
-    // Require Manage Guild — without it Discord won't return invite data
-    const botMember = guild.members.me;
-    if (!botMember?.permissions.has('ManageGuild')) {
-      console.warn('[Invites] Missing Manage Guild permission — invite tracking disabled');
-    } else {
-      const cachedInvites = client.inviteCache.get(guild.id) || new Map();
-      const currentInvites = await guild.invites.fetch();
-
-      // Case 1: Uses count increased on an existing invite
-      usedInvite = currentInvites.find(inv => {
-        const cached = cachedInvites.get(inv.code);
-        // Known invite: uses went up. Unknown to cache but has 1 use: was just created+used
-        return cached ? inv.uses > cached.uses : inv.uses === 1;
-      });
-
-      // Case 2: Single-use invite deleted BEFORE GuildMemberAdd (buffered in InviteDelete)
-      if (!usedInvite) {
-        const buffer = client.deletedInviteBuffer.get(guild.id);
-        if (buffer && buffer.size > 0) {
-          usedInvite = [...buffer.values()].pop();
-          buffer.delete(usedInvite.code);
-        }
-      }
-
-      // Case 3: Invite disappeared from guild but wasn't in buffer
-      if (!usedInvite) {
-        for (const [code, invite] of cachedInvites) {
-          if (!currentInvites.has(code)) {
-            usedInvite = invite;
-            break;
-          }
-        }
-      }
-
-      // Case 4: Vanity URL (discord.gg/server-name)
-      if (!usedInvite && guild.vanityURLCode) {
-        try {
-          const vanity = await guild.fetchVanityData();
-          const cachedVanity = client.vanityUsesCache?.get(guild.id) ?? vanity.uses;
-          if (!client.vanityUsesCache) client.vanityUsesCache = new Map();
-          if (vanity.uses > cachedVanity) {
-            isVanity   = true;
-            inviteCode = guild.vanityURLCode;
-            inviterId  = 'vanity';
-          }
-          client.vanityUsesCache.set(guild.id, vanity.uses);
-        } catch { /* vanity not available */ }
-      }
-
-      // Refresh invite cache with latest data
-      client.inviteCache.set(guild.id, new Map(currentInvites.map(inv => [inv.code, inv])));
-
-      if (usedInvite) {
-        inviterId  = usedInvite.inviter?.id || 'unknown';
-        inviteCode = usedInvite.code || 'unknown';
-      }
-
-      console.log(`[Invites] ${member.user.tag} joined | code=${inviteCode} inviter=${inviterId}`);
-    }
-  } catch (err) {
-    console.error('[Invites] Detection error:', err.message);
-  }
+  const { inviterId, inviteCode } = await inviteTracker.trackMemberJoin(member);
+  console.log(`[Invites] ${member.user.tag} joined | code=${inviteCode} inviter=${inviterId}`);
 
   // Record in database
   recordJoin(member.guild.id, inviterId, member.id, inviteCode);
@@ -148,9 +71,7 @@ client.on(Events.GuildMemberAdd, async member => {
   if (!channel) return;
 
   let inviterText = 'Unknown';
-  if (isVanity) {
-    inviterText = `Vanity URL (\`${inviteCode}\`)`;
-  } else if (inviterId !== 'unknown') {
+  if (inviterId !== 'unknown') {
     const inviter = await client.users.fetch(inviterId).catch(() => null);
     inviterText = inviter ? `${inviter.tag} (${inviter.id})` : `Unknown (${inviterId})`;
   }
@@ -182,27 +103,12 @@ client.on(Events.GuildMemberRemove, async member => {
 
 // ─── Event: Update invite cache on new invite ─────────────────────────────────
 client.on(Events.InviteCreate, invite => {
-  const cached = client.inviteCache.get(invite.guild.id) || new Map();
-  cached.set(invite.code, invite);
-  client.inviteCache.set(invite.guild.id, cached);
+  inviteTracker.trackInviteCreate(invite);
 });
 
 // ─── Event: Update invite cache on invite delete ──────────────────────────────
 client.on(Events.InviteDelete, invite => {
-  // Remove from main cache
-  const cached = client.inviteCache.get(invite.guild.id);
-  if (cached) cached.delete(invite.code);
-
-  // Store in buffer so GuildMemberAdd can still identify single-use invites
-  const buffer = client.deletedInviteBuffer.get(invite.guild.id) || new Map();
-  buffer.set(invite.code, invite);
-  client.deletedInviteBuffer.set(invite.guild.id, buffer);
-
-  // Auto-expire buffer entry after 10 seconds
-  setTimeout(() => {
-    const b = client.deletedInviteBuffer.get(invite.guild.id);
-    if (b) b.delete(invite.code);
-  }, 10000);
+  inviteTracker.trackInviteDelete(invite);
 });
 
 // ─── Event: Track deleted messages for snipe ─────────────────────────────────
