@@ -12,7 +12,7 @@ for (const file of commandFiles) {
   }
 }
 
-const rest = new REST({ version: '10' }).setToken(config.token);
+const rest = new REST({ version: '10' }).setToken(process.env.token);
 
 (async () => {
   try {
