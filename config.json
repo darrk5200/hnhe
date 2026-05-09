@@ -1,5 +1,13 @@
 {
-  "clientId": "YOUR_CLIENT_ID_HERE",
-  "guildId": "YOUR_GUILD_ID_HERE",
-  "prefix": "!"
+  "clientId": "1502700822767865946",
+  "guildId": "1502697984465567826",
+  "prefix": "!",
+  "modLogChannelId": "1502706237727441158",
+  "welcomeChannelId": "1502710955526721657",
+  "leaveChannelId": "1502697985002311772",
+  "welcomeMessageEnabled": true,
+  "leaveMessageEnabled": true,
+  "invitesChannelId": "1502710851755577444",
+  "ticketsCategoryId": "1502710998400762117",
+  "ticketLogChannelId": "1502714996537294898"
 }
