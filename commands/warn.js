@@ -2,6 +2,9 @@ const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('disc
 const { addWarn, getWarns } = require('../utils/database');
 const { sendModLog } = require('../utils/modLog');
 
+const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
+
 module.exports = {
   name: 'warn',
 
@@ -22,17 +25,7 @@ module.exports = {
     addWarn(interaction.guild.id, target.id, interaction.user.id, reason);
     const warns = getWarns(interaction.guild.id, target.id);
 
-    const embed = new EmbedBuilder()
-      .setColor(0xffaa00)
-      .setTitle('⚠️ Member Warned')
-      .addFields(
-        { name: 'User', value: `${target.user.tag} (${target.id})`, inline: true },
-        { name: 'Moderator', value: `${interaction.user.tag}`, inline: true },
-        { name: 'Total Warnings', value: `${warns.length}`, inline: true },
-        { name: 'Reason', value: reason }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.user.tag, target.id, interaction.user.tag, warns.length, reason);
     await interaction.reply({ embeds: [embed] });
     await sendModLog(interaction.client, embed);
   },
@@ -49,18 +42,21 @@ module.exports = {
     addWarn(message.guild.id, target.id, message.author.id, reason);
     const warns = getWarns(message.guild.id, target.id);
 
-    const embed = new EmbedBuilder()
-      .setColor(0xffaa00)
-      .setTitle('⚠️ Member Warned')
-      .addFields(
-        { name: 'User', value: `${target.user.tag} (${target.id})`, inline: true },
-        { name: 'Moderator', value: `${message.author.tag}`, inline: true },
-        { name: 'Total Warnings', value: `${warns.length}`, inline: true },
-        { name: 'Reason', value: reason }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.user.tag, target.id, message.author.tag, warns.length, reason);
     await message.reply({ embeds: [embed] });
     await sendModLog(message.client, embed);
   }
 };
+
+function buildEmbed(userTag, userId, modTag, warnCount, reason) {
+  return new EmbedBuilder()
+    .setColor(0xffaa00)
+    .setTitle(`${DARROW} Member Warned`)
+    .addFields(
+      { name: `${ARROW} User`,            value: `${userTag} (${userId})`, inline: true },
+      { name: `${ARROW} Moderator`,       value: modTag,                   inline: true },
+      { name: `${ARROW} Total Warnings`,  value: `${warnCount}`,           inline: true },
+      { name: `${ARROW} Reason`,          value: reason }
+    )
+    .setTimestamp();
+}

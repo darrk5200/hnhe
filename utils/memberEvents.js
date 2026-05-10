@@ -13,14 +13,17 @@ async function handleWelcome(member) {
 
   const memberCount = member.guild.memberCount;
 
+  const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+  const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
+
   const embed = new EmbedBuilder()
     .setColor(0x57f287)
-    .setTitle(`👋 Welcome to ${member.guild.name}!`)
+    .setTitle(`${DARROW} Welcome to ${member.guild.name}!`)
     .setDescription(`Hey ${member}, glad to have you here!\nYou are member **#${memberCount}**.`)
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
     .addFields(
-      { name: 'Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
-      { name: 'Members', value: `${memberCount}`, inline: true }
+      { name: `${ARROW} Account Created`, value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
+      { name: `${ARROW} Members`,         value: `${memberCount}`,                                           inline: true }
     )
     .setFooter({ text: `ID: ${member.id}` })
     .setTimestamp();
@@ -42,14 +45,17 @@ async function handleLeave(member) {
 
   const memberCount = member.guild.memberCount;
 
+  const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+  const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
+
   const embed = new EmbedBuilder()
     .setColor(0xed4245)
-    .setTitle(`👋 Goodbye, ${member.user.tag}`)
+    .setTitle(`${DARROW} Goodbye, ${member.user.tag}`)
     .setDescription(`**${member.user.tag}** has left the server.\nWe now have **${memberCount}** members.`)
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
     .addFields(
-      { name: 'Joined', value: member.joinedTimestamp ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : 'Unknown', inline: true },
-      { name: 'Members', value: `${memberCount}`, inline: true }
+      { name: `${ARROW} Joined`,  value: member.joinedTimestamp ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : 'Unknown', inline: true },
+      { name: `${ARROW} Members`, value: `${memberCount}`,                                                                           inline: true }
     )
     .setFooter({ text: `ID: ${member.id}` })
     .setTimestamp();

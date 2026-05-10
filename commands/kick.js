@@ -1,6 +1,9 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { sendModLog } = require('../utils/modLog');
 
+const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
+
 module.exports = {
   name: 'kick',
 
@@ -21,16 +24,7 @@ module.exports = {
 
     await target.kick(reason);
 
-    const embed = new EmbedBuilder()
-      .setColor(0xff6600)
-      .setTitle('👢 Member Kicked')
-      .addFields(
-        { name: 'User', value: `${target.user.tag} (${target.id})`, inline: true },
-        { name: 'Moderator', value: `${interaction.user.tag}`, inline: true },
-        { name: 'Reason', value: reason }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.user.tag, target.id, interaction.user.tag, reason);
     await interaction.reply({ embeds: [embed] });
     await sendModLog(interaction.client, embed);
   },
@@ -47,17 +41,20 @@ module.exports = {
     const reason = args.slice(1).join(' ') || 'No reason provided';
     await target.kick(reason);
 
-    const embed = new EmbedBuilder()
-      .setColor(0xff6600)
-      .setTitle('👢 Member Kicked')
-      .addFields(
-        { name: 'User', value: `${target.user.tag} (${target.id})`, inline: true },
-        { name: 'Moderator', value: `${message.author.tag}`, inline: true },
-        { name: 'Reason', value: reason }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.user.tag, target.id, message.author.tag, reason);
     await message.reply({ embeds: [embed] });
     await sendModLog(message.client, embed);
   }
 };
+
+function buildEmbed(userTag, userId, modTag, reason) {
+  return new EmbedBuilder()
+    .setColor(0xff6600)
+    .setTitle(`${DARROW} Member Kicked`)
+    .addFields(
+      { name: `${ARROW} User`,      value: `${userTag} (${userId})`, inline: true },
+      { name: `${ARROW} Moderator`, value: modTag,                   inline: true },
+      { name: `${ARROW} Reason`,    value: reason }
+    )
+    .setTimestamp();
+}

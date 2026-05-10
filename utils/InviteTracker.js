@@ -1,91 +1,78 @@
-const fs = require('fs');
-const path = require('path');
+const { Collection } = require('discord.js');
 
 class InviteTracker {
   constructor(client) {
     this.client = client;
-    this.invitesCache = new Map(); // guildId -> Collection<code, Invite>
-    this.dataPath = path.join(__dirname, '../data/invite_tracker.json');
-    this.ensureDatabase();
+    this.invites = new Map(); // guildId -> Collection(code, invite)
   }
 
-  ensureDatabase() {
-    if (!fs.existsSync(this.dataPath)) {
-      fs.writeFileSync(this.dataPath, JSON.stringify({}, null, 2));
-    }
-  }
-
-  loadData(guildId) {
-    const allData = JSON.parse(fs.readFileSync(this.dataPath, 'utf8'));
-    if (!allData[guildId]) {
-      allData[guildId] = { invites: {}, members: {} };
-      fs.writeFileSync(this.dataPath, JSON.stringify(allData, null, 2));
-    }
-    return allData[guildId];
-  }
-
-  saveData(guildId, guildData) {
-    const allData = JSON.parse(fs.readFileSync(this.dataPath, 'utf8'));
-    allData[guildId] = guildData;
-    fs.writeFileSync(this.dataPath, JSON.stringify(allData, null, 2));
-  }
-
-  async initializeCache() {
+  // 🔹 Initialize invite cache on bot ready
+  async init() {
     for (const guild of this.client.guilds.cache.values()) {
       try {
         const invites = await guild.invites.fetch();
-        this.invitesCache.set(guild.id, invites);
-
-        const data = this.loadData(guild.id);
-        for (const [code, invite] of invites) {
-          if (!data.invites[code]) {
-            data.invites[code] = {
-              code,
-              uses: invite.uses ?? 0,
-              inviterId: invite.inviter?.id ?? null
-            };
-          }
-        }
-        this.saveData(guild.id, data);
+        this.invites.set(guild.id, new Collection(invites));
         console.log(`📨 Cached ${invites.size} invites for ${guild.name}`);
-      } catch (error) {
-        console.error(`Failed to fetch invites for guild ${guild.name}:`, error.message);
+      } catch (err) {
+        console.warn(`⚠️ Failed to fetch invites for ${guild.name}: ${err.message}`);
       }
     }
   }
 
-  // Returns { inviterId, inviteCode } — never throws
-  async trackMemberJoin(member) {
+  // 🔹 When a new invite is created
+  onInviteCreate(invite) {
+    const guildInvites = this.invites.get(invite.guild.id);
+    if (guildInvites) {
+      guildInvites.set(invite.code, invite);
+    }
+  }
+
+  // 🔹 When an invite is deleted
+  onInviteDelete(invite) {
+    const guildInvites = this.invites.get(invite.guild.id);
+    if (guildInvites) {
+      guildInvites.delete(invite.code);
+    }
+  }
+
+  // 🔹 Track who invited a member
+  async trackJoin(member) {
     const guild = member.guild;
-    const oldInvites = this.invitesCache.get(guild.id);
+
+    let oldInvites = this.invites.get(guild.id);
+
+    // Fallback if cache missing
+    if (!oldInvites) {
+      try {
+        oldInvites = await guild.invites.fetch();
+        this.invites.set(guild.id, new Collection(oldInvites));
+      } catch (err) {
+        return { inviterId: 'unknown', code: 'unknown' };
+      }
+    }
 
     let newInvites;
     try {
       newInvites = await guild.invites.fetch();
-    } catch (err) {
-      console.warn(`[InviteTracker] Could not fetch invites for ${guild.name}: ${err.message}`);
-      return { inviterId: 'unknown', inviteCode: 'unknown' };
+    } catch {
+      return { inviterId: 'unknown', code: 'unknown' };
     }
 
-    // Update cache immediately so the next join compares against fresh data
-    this.invitesCache.set(guild.id, newInvites);
-
-    if (!oldInvites) {
-      return { inviterId: 'unknown', inviteCode: 'unknown' };
-    }
+    // Update cache immediately
+    this.invites.set(guild.id, new Collection(newInvites));
 
     let usedInvite = null;
 
-    // Case 1: Uses count increased on a known invite
+    // ✅ Case 1: Uses increased
     for (const [code, invite] of newInvites) {
       const old = oldInvites.get(code);
-      if (old && (invite.uses ?? 0) > (old.uses ?? 0)) {
+      if (old && invite.uses > old.uses) {
         usedInvite = invite;
         break;
       }
     }
 
-    // Case 2: Invite disappeared (single-use or hit max uses — deleted by Discord)
+    // ✅ Case 2: Invite deleted (1-use or maxed)
     if (!usedInvite) {
       for (const [code, invite] of oldInvites) {
         if (!newInvites.has(code)) {
@@ -95,38 +82,37 @@ class InviteTracker {
       }
     }
 
-    // Case 3: New invite not previously cached but already used
+    // ✅ Case 3: New invite already used
     if (!usedInvite) {
       for (const [code, invite] of newInvites) {
-        if (!oldInvites.has(code) && (invite.uses ?? 0) >= 1) {
+        if (!oldInvites.has(code) && invite.uses > 0) {
           usedInvite = invite;
           break;
         }
       }
     }
 
+    // ✅ Case 4: Vanity URL
     if (!usedInvite) {
-      return { inviterId: 'unknown', inviteCode: 'unknown' };
+      try {
+        const vanity = await guild.fetchVanityData();
+        if (vanity?.uses) {
+          return {
+            inviterId: 'vanity',
+            code: guild.vanityURLCode || 'vanity'
+          };
+        }
+      } catch {}
+    }
+
+    if (!usedInvite) {
+      return { inviterId: 'unknown', code: 'unknown' };
     }
 
     return {
-      inviterId: usedInvite.inviter?.id ?? 'unknown',
-      inviteCode: usedInvite.code ?? 'unknown'
+      inviterId: usedInvite.inviter?.id || 'unknown',
+      code: usedInvite.code || 'unknown'
     };
-  }
-
-  trackInviteCreate(invite) {
-    const cached = this.invitesCache.get(invite.guild.id);
-    if (cached) {
-      cached.set(invite.code, invite);
-    }
-  }
-
-  trackInviteDelete(invite) {
-    const cached = this.invitesCache.get(invite.guild.id);
-    if (cached) {
-      cached.delete(invite.code);
-    }
   }
 }
 

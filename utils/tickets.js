@@ -6,7 +6,8 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder
+  EmbedBuilder,
+  AttachmentBuilder
 } = require('discord.js');
 const { getConfig } = require('./config');
 
@@ -40,6 +41,9 @@ function saveTicket(guildId, channelId, userId, type) {
 function removeTicket(channelId) {
   db.prepare('DELETE FROM tickets WHERE channel_id = ?').run(channelId);
 }
+
+const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
 
 const TYPE_LABELS = { support: 'Support', reward: 'Reward', others: 'Others' };
 const TYPE_COLORS = { support: 0x5865f2, reward: 0x57f287, others: 0x99aab5 };
@@ -123,18 +127,23 @@ async function handleTicketOpen(interaction, type) {
 
   const embed = new EmbedBuilder()
     .setColor(TYPE_COLORS[type] || 0x5865f2)
-    .setTitle(`🎫 ${TYPE_LABELS[type] || type} Ticket`)
+    .setTitle(`${DARROW} ${TYPE_LABELS[type] || type} Ticket`)
     .setDescription(
       `Welcome ${interaction.user}! A staff member will be with you shortly.\n\nPlease describe your issue in as much detail as possible.`
     )
     .addFields(
-      { name: 'Opened By', value: `${interaction.user.tag}`, inline: true },
-      { name: 'Type', value: TYPE_LABELS[type] || type, inline: true }
+      { name: `${ARROW} Opened By`, value: `${interaction.user.tag}`, inline: true },
+      { name: `${ARROW} Type`,      value: TYPE_LABELS[type] || type, inline: true }
     )
     .setFooter({ text: 'Use the button below to close this ticket when resolved.' })
     .setTimestamp();
 
-  const closeRow = new ActionRowBuilder().addComponents(
+  const buttonRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_transcript')
+      .setLabel('Save Transcript')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('📄'),
     new ButtonBuilder()
       .setCustomId('ticket_close')
       .setLabel('Close Ticket')
@@ -142,17 +151,17 @@ async function handleTicketOpen(interaction, type) {
       .setEmoji('🔒')
   );
 
-  await channel.send({ content: `${interaction.user}`, embeds: [embed], components: [closeRow] });
+  await channel.send({ content: `${interaction.user}`, embeds: [embed], components: [buttonRow] });
   await interaction.editReply({ content: `✅ Your ticket has been opened: ${channel}` });
 
   // Log ticket open
   const logEmbed = new EmbedBuilder()
     .setColor(0x57f287)
-    .setTitle('🎫 Ticket Opened')
+    .setTitle(`${DARROW} Ticket Opened`)
     .addFields(
-      { name: 'User', value: `${interaction.user.tag} (${interaction.user.id})`, inline: true },
-      { name: 'Type', value: TYPE_LABELS[type] || type, inline: true },
-      { name: 'Channel', value: `${channel}`, inline: true }
+      { name: `${ARROW} User`,    value: `${interaction.user.tag} (${interaction.user.id})`, inline: true },
+      { name: `${ARROW} Type`,    value: TYPE_LABELS[type] || type,                          inline: true },
+      { name: `${ARROW} Channel`, value: `${channel}`,                                       inline: true }
     )
     .setFooter({ text: `Channel ID: ${channel.id}` })
     .setTimestamp();
@@ -173,7 +182,7 @@ async function handleTicketClose(interaction) {
 
   const closingEmbed = new EmbedBuilder()
     .setColor(0xed4245)
-    .setTitle('🔒 Ticket Closing')
+    .setTitle(`${DARROW} Ticket Closing`)
     .setDescription(`This ticket was closed by ${interaction.user}.\nChannel will be deleted in **5 seconds**.`)
     .setTimestamp();
 
@@ -184,22 +193,22 @@ async function handleTicketClose(interaction) {
   // Log ticket close
   const logEmbed = new EmbedBuilder()
     .setColor(0xed4245)
-    .setTitle('🔒 Ticket Closed')
+    .setTitle(`${DARROW} Ticket Closed`)
     .addFields(
-      { name: 'Closed By', value: `${interaction.user.tag} (${interaction.user.id})`, inline: true },
-      { name: 'Channel', value: channel.name, inline: true },
-      { name: 'Duration Open', value: duration, inline: true }
+      { name: `${ARROW} Closed By`,     value: `${interaction.user.tag} (${interaction.user.id})`, inline: true },
+      { name: `${ARROW} Channel`,       value: channel.name,                                       inline: true },
+      { name: `${ARROW} Duration Open`, value: duration,                                           inline: true }
     );
 
   if (ticket) {
     const opener = await interaction.client.users.fetch(ticket.user_id).catch(() => null);
     logEmbed.addFields({
-      name: 'Ticket Owner',
+      name: `${ARROW} Ticket Owner`,
       value: opener ? `${opener.tag} (${opener.id})` : ticket.user_id,
       inline: true
     });
     logEmbed.addFields({
-      name: 'Type',
+      name: `${ARROW} Type`,
       value: TYPE_LABELS[ticket.type] || ticket.type,
       inline: true
     });
@@ -223,4 +232,83 @@ function formatDuration(ms) {
   return `${s}s`;
 }
 
-module.exports = { handleTicketOpen, handleTicketClose };
+async function handleTicketTranscript(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const channel = interaction.channel;
+
+  // Fetch all messages in the channel (up to 500, paginated)
+  const allMessages = [];
+  let before = null;
+
+  while (true) {
+    const fetched = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+    if (fetched.size === 0) break;
+    allMessages.push(...fetched.values());
+    before = fetched.last().id;
+    if (fetched.size < 100 || allMessages.length >= 500) break;
+  }
+
+  allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+  const lines = allMessages.map(msg => {
+    const time = new Date(msg.createdTimestamp).toISOString().replace('T', ' ').slice(0, 19);
+    const tag  = msg.author.tag;
+    const content = msg.content || (msg.embeds.length ? '[embed]' : '[no content]');
+    const attachments = msg.attachments.size
+      ? '\n  Attachments: ' + msg.attachments.map(a => a.url).join(', ')
+      : '';
+    return `[${time}] ${tag}: ${content}${attachments}`;
+  });
+
+  const header = [
+    `Ticket Transcript — #${channel.name}`,
+    `Guild: ${channel.guild.name} (${channel.guild.id})`,
+    `Exported by: ${interaction.user.tag}`,
+    `Date: ${new Date().toISOString()}`,
+    `Total messages: ${lines.length}`,
+    '─'.repeat(60)
+  ].join('\n');
+
+  const fileContent = header + '\n\n' + lines.join('\n');
+  const attachment = new AttachmentBuilder(Buffer.from(fileContent, 'utf8'), {
+    name: `transcript-${channel.name}.txt`
+  });
+
+  await interaction.editReply({ content: '📄 Transcript saved! Check your DMs.', files: [attachment] });
+
+  // DM the transcript to the user who clicked
+  try {
+    const dmChannel = await interaction.user.createDM();
+    await dmChannel.send({
+      content: `📄 Here is the transcript for **#${channel.name}** in **${channel.guild.name}**:`,
+      files: [new AttachmentBuilder(Buffer.from(fileContent, 'utf8'), { name: `transcript-${channel.name}.txt` })]
+    });
+  } catch {
+    await interaction.followUp({ content: '⚠️ Could not DM you the transcript — your DMs may be closed.', flags: 64 }).catch(() => {});
+  }
+
+  // Also send to ticket log channel
+  const cfg = getConfig();
+  const logChannelId = cfg.ticketLogChannelId;
+  if (logChannelId && logChannelId !== 'YOUR_TICKET_LOG_CHANNEL_ID_HERE') {
+    const logChannel = channel.guild.channels.cache.get(logChannelId);
+    if (logChannel) {
+      const logEmbed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle('📄 Ticket Transcript Saved')
+        .addFields(
+          { name: 'Channel',     value: channel.name,             inline: true },
+          { name: 'Exported By', value: `${interaction.user.tag}`, inline: true },
+          { name: 'Messages',    value: `${lines.length}`,         inline: true }
+        )
+        .setTimestamp();
+      await logChannel.send({
+        embeds: [logEmbed],
+        files: [new AttachmentBuilder(Buffer.from(fileContent, 'utf8'), { name: `transcript-${channel.name}.txt` })]
+      }).catch(() => {});
+    }
+  }
+}
+
+module.exports = { handleTicketOpen, handleTicketClose, handleTicketTranscript, getTicketByChannel };

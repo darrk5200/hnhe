@@ -1,10 +1,13 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { getWarns } = require('../utils/database');
 
+const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
+
 async function buildWarnsEmbed(warns, target, client) {
   const embed = new EmbedBuilder()
     .setColor(0xffaa00)
-    .setTitle(`⚠️ Warnings for ${target.tag}`)
+    .setTitle(`${DARROW} Warnings for ${target.tag}`)
     .setFooter({ text: `Total warnings: ${warns.length}` })
     .setTimestamp();
 
@@ -16,7 +19,7 @@ async function buildWarnsEmbed(warns, target, client) {
       const modName = mod ? mod.tag : `Unknown (${warn.moderator_id})`;
       const date = new Date(warn.timestamp).toUTCString();
       return {
-        name: `Warning #${i + 1} — ${modName}`,
+        name: `${ARROW} Warning #${i + 1} — ${modName}`,
         value: `**Reason:** ${warn.reason}\n**Date:** ${date}`
       };
     }));

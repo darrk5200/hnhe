@@ -1,5 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getUserData, getLevelFromMessages, getThreshold } = require('../utils/levels');
+const { getUserData, getThreshold } = require('../utils/levels');
+
+const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
+const STAR   = '<a:hnBlue_Star:1502946447698432121>';
 
 function buildLevelEmbed(user, data) {
   const currentLevel = data.level;
@@ -14,14 +18,14 @@ function buildLevelEmbed(user, data) {
 
   return new EmbedBuilder()
     .setColor(0x5865f2)
-    .setTitle(`⭐ Level — ${user.tag}`)
+    .setTitle(`${STAR} Level — ${user.tag}`)
     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 128 }))
     .addFields(
-      { name: 'Level', value: `**${currentLevel}**`, inline: true },
-      { name: 'Messages', value: `**${messages}**`, inline: true },
-      { name: 'Next Level', value: `**${currentLevel + 1}**`, inline: true },
+      { name: `${ARROW} Level`,    value: `**${currentLevel}**`,     inline: true },
+      { name: `${ARROW} Messages`, value: `**${messages}**`,         inline: true },
+      { name: `${ARROW} Next Level`, value: `**${currentLevel + 1}**`, inline: true },
       {
-        name: `Progress to Level ${currentLevel + 1}`,
+        name: `${ARROW} Progress to Level ${currentLevel + 1}`,
         value: `\`${bar}\` ${progress}/${needed} messages`
       }
     )
@@ -44,8 +48,7 @@ module.exports = {
   async execute(interaction) {
     const target = interaction.options.getUser('user') || interaction.user;
     const data = getUserData(interaction.guild.id, target.id);
-    const embed = buildLevelEmbed(target, data);
-    await interaction.reply({ embeds: [embed] });
+    await interaction.reply({ embeds: [buildLevelEmbed(target, data)] });
   },
 
   async prefixExecute(message, args) {
@@ -54,7 +57,6 @@ module.exports = {
       message.author;
 
     const data = getUserData(message.guild.id, target.id);
-    const embed = buildLevelEmbed(target, data);
-    await message.reply({ embeds: [embed] });
+    await message.reply({ embeds: [buildLevelEmbed(target, data)] });
   }
 };

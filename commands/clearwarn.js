@@ -2,6 +2,9 @@ const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('disc
 const { clearWarns, getWarns } = require('../utils/database');
 const { sendModLog } = require('../utils/modLog');
 
+const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
+
 module.exports = {
   name: 'clearwarn',
 
@@ -18,16 +21,7 @@ module.exports = {
     const before = getWarns(interaction.guild.id, target.id).length;
     clearWarns(interaction.guild.id, target.id);
 
-    const embed = new EmbedBuilder()
-      .setColor(0x00aaff)
-      .setTitle('🧹 Warnings Cleared')
-      .addFields(
-        { name: 'User', value: `${target.tag} (${target.id})`, inline: true },
-        { name: 'Moderator', value: `${interaction.user.tag}`, inline: true },
-        { name: 'Warnings Removed', value: `${before}`, inline: true }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.tag, target.id, interaction.user.tag, before);
     await interaction.reply({ embeds: [embed] });
     await sendModLog(interaction.client, embed);
   },
@@ -42,17 +36,20 @@ module.exports = {
     const before = getWarns(message.guild.id, target.id).length;
     clearWarns(message.guild.id, target.id);
 
-    const embed = new EmbedBuilder()
-      .setColor(0x00aaff)
-      .setTitle('🧹 Warnings Cleared')
-      .addFields(
-        { name: 'User', value: `${target.tag} (${target.id})`, inline: true },
-        { name: 'Moderator', value: `${message.author.tag}`, inline: true },
-        { name: 'Warnings Removed', value: `${before}`, inline: true }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.tag, target.id, message.author.tag, before);
     await message.reply({ embeds: [embed] });
     await sendModLog(message.client, embed);
   }
 };
+
+function buildEmbed(userTag, userId, modTag, count) {
+  return new EmbedBuilder()
+    .setColor(0x00aaff)
+    .setTitle(`${DARROW} Warnings Cleared`)
+    .addFields(
+      { name: `${ARROW} User`,             value: `${userTag} (${userId})`, inline: true },
+      { name: `${ARROW} Moderator`,        value: modTag,                   inline: true },
+      { name: `${ARROW} Warnings Removed`, value: `${count}`,               inline: true }
+    )
+    .setTimestamp();
+}

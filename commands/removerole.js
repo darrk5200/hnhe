@@ -1,6 +1,9 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { sendModLog } = require('../utils/modLog');
 
+const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
+
 module.exports = {
   name: 'removerole',
 
@@ -13,7 +16,7 @@ module.exports = {
 
   async execute(interaction) {
     const target = interaction.options.getMember('user');
-    const role = interaction.options.getRole('role');
+    const role   = interaction.options.getRole('role');
 
     if (!target) return interaction.reply({ content: 'User not found in this server.', flags: 64 });
     if (role.position >= interaction.guild.members.me.roles.highest.position)
@@ -22,17 +25,7 @@ module.exports = {
       return interaction.reply({ content: `${target.user.tag} does not have that role.`, flags: 64 });
 
     await target.roles.remove(role);
-
-    const embed = new EmbedBuilder()
-      .setColor(0xff4444)
-      .setTitle('❌ Role Removed')
-      .addFields(
-        { name: 'User', value: `${target.user.tag} (${target.id})`, inline: true },
-        { name: 'Role', value: `${role.name}`, inline: true },
-        { name: 'Moderator', value: `${interaction.user.tag}`, inline: true }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.user.tag, target.id, role.name, interaction.user.tag);
     await interaction.reply({ embeds: [embed] });
     await sendModLog(interaction.client, embed);
   },
@@ -51,22 +44,23 @@ module.exports = {
     if (!role) return message.reply('Please mention a valid role or provide its name/ID.');
     if (role.position >= message.guild.members.me.roles.highest.position)
       return message.reply('I cannot remove a role higher than or equal to my highest role.');
-    if (!target.roles.cache.has(role.id))
-      return message.reply(`${target.user.tag} does not have that role.`);
+    if (!target.roles.cache.has(role.id)) return message.reply(`${target.user.tag} does not have that role.`);
 
     await target.roles.remove(role);
-
-    const embed = new EmbedBuilder()
-      .setColor(0xff4444)
-      .setTitle('❌ Role Removed')
-      .addFields(
-        { name: 'User', value: `${target.user.tag} (${target.id})`, inline: true },
-        { name: 'Role', value: `${role.name}`, inline: true },
-        { name: 'Moderator', value: `${message.author.tag}`, inline: true }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.user.tag, target.id, role.name, message.author.tag);
     await message.reply({ embeds: [embed] });
     await sendModLog(message.client, embed);
   }
 };
+
+function buildEmbed(userTag, userId, roleName, modTag) {
+  return new EmbedBuilder()
+    .setColor(0xff4444)
+    .setTitle(`${DARROW} Role Removed`)
+    .addFields(
+      { name: `${ARROW} User`,      value: `${userTag} (${userId})`, inline: true },
+      { name: `${ARROW} Role`,      value: roleName,                 inline: true },
+      { name: `${ARROW} Moderator`, value: modTag,                   inline: true }
+    )
+    .setTimestamp();
+}

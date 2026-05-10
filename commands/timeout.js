@@ -1,6 +1,9 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { sendModLog } = require('../utils/modLog');
 
+const DARROW = '<a:hnblue_ARROW:1502946449544187906>';
+const ARROW  = '<a:hnblue_arrow:1502946479801765969>';
+
 module.exports = {
   name: 'timeout',
 
@@ -23,18 +26,7 @@ module.exports = {
 
     await target.timeout(duration, reason);
 
-    const mins = duration / 60000;
-    const embed = new EmbedBuilder()
-      .setColor(0xffcc00)
-      .setTitle('⏱️ Member Timed Out')
-      .addFields(
-        { name: 'User', value: `${target.user.tag} (${target.id})`, inline: true },
-        { name: 'Moderator', value: `${interaction.user.tag}`, inline: true },
-        { name: 'Duration', value: `${mins} minute(s)`, inline: true },
-        { name: 'Reason', value: reason }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.user.tag, target.id, interaction.user.tag, duration / 60000, reason);
     await interaction.reply({ embeds: [embed] });
     await sendModLog(interaction.client, embed);
   },
@@ -51,28 +43,26 @@ module.exports = {
     const argOffset = message.mentions.members.first() ? 1 : 2;
     let mins = parseInt(args[argOffset]);
     let reasonStart = argOffset;
-
-    if (!isNaN(mins)) {
-      reasonStart = argOffset + 1;
-    } else {
-      mins = 60;
-    }
+    if (!isNaN(mins)) { reasonStart = argOffset + 1; } else { mins = 60; }
 
     const reason = args.slice(reasonStart).join(' ') || 'No reason provided';
     await target.timeout(mins * 60 * 1000, reason);
 
-    const embed = new EmbedBuilder()
-      .setColor(0xffcc00)
-      .setTitle('⏱️ Member Timed Out')
-      .addFields(
-        { name: 'User', value: `${target.user.tag} (${target.id})`, inline: true },
-        { name: 'Moderator', value: `${message.author.tag}`, inline: true },
-        { name: 'Duration', value: `${mins} minute(s)`, inline: true },
-        { name: 'Reason', value: reason }
-      )
-      .setTimestamp();
-
+    const embed = buildEmbed(target.user.tag, target.id, message.author.tag, mins, reason);
     await message.reply({ embeds: [embed] });
     await sendModLog(message.client, embed);
   }
 };
+
+function buildEmbed(userTag, userId, modTag, mins, reason) {
+  return new EmbedBuilder()
+    .setColor(0xffcc00)
+    .setTitle(`${DARROW} Member Timed Out`)
+    .addFields(
+      { name: `${ARROW} User`,      value: `${userTag} (${userId})`, inline: true },
+      { name: `${ARROW} Moderator`, value: modTag,                   inline: true },
+      { name: `${ARROW} Duration`,  value: `${mins} minute(s)`,      inline: true },
+      { name: `${ARROW} Reason`,    value: reason }
+    )
+    .setTimestamp();
+}
