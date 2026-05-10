@@ -5,7 +5,8 @@ const { handleWelcome, handleLeave } = require('./utils/memberEvents');
 const { incrementMessages } = require('./utils/levels');
 const { recordJoin, recordLeave } = require('./utils/invites');
 const { getConfig } = require('./utils/config');
-const { handleTicketOpen, handleTicketClose } = require('./utils/tickets');
+const { handleTicketOpen, handleTicketClose, handleTicketTranscript } = require('./utils/tickets');
+const { hasNoPrefix } = require('./utils/noprefix');
 const InviteTracker = require('./utils/InviteTracker');
 
 // Create client
@@ -15,7 +16,6 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildInvites
   ]
 });
@@ -48,7 +48,7 @@ client.once(Events.ClientReady, async () => {
   console.log(`📁 Loaded ${client.prefixCommands.size} prefix commands`);
   console.log(`🔧 Prefix: ${config.prefix}`);
 
-  await inviteTracker.initializeCache();
+  await inviteTracker.init();
 });
 
 // ─── Event: Welcome + invite tracking on member join ─────────────────────────
@@ -56,7 +56,7 @@ client.on(Events.GuildMemberAdd, async member => {
   // Welcome message
   await handleWelcome(member);
 
-  const { inviterId, inviteCode } = await inviteTracker.trackMemberJoin(member);
+  const { inviterId, code: inviteCode } = await inviteTracker.trackJoin(member);
   console.log(`[Invites] ${member.user.tag} joined | code=${inviteCode} inviter=${inviterId}`);
 
   // Record in database
@@ -101,16 +101,14 @@ client.on(Events.GuildMemberRemove, async member => {
   recordLeave(member.guild.id, member.id);
 });
 
-// ─── Event: Update invite cache on new invite ─────────────────────────────────
-client.on(Events.InviteCreate, invite => {
-  inviteTracker.trackInviteCreate(invite);
+
+client.on('inviteCreate', invite => {
+  inviteTracker.onInviteCreate(invite);
 });
 
-// ─── Event: Update invite cache on invite delete ──────────────────────────────
-client.on(Events.InviteDelete, invite => {
-  inviteTracker.trackInviteDelete(invite);
+client.on('inviteDelete', invite => {
+  inviteTracker.onInviteDelete(invite);
 });
-
 // ─── Event: Track deleted messages for snipe ─────────────────────────────────
 client.on(Events.MessageDelete, message => {
   if (message.author?.bot) return;
@@ -154,6 +152,13 @@ client.on(Events.InteractionCreate, async interaction => {
       return;
     }
 
+    if (customId === 'ticket_transcript') {
+      await handleTicketTranscript(interaction).catch(err => {
+        console.error('[Ticket] Transcript error:', err.message);
+      });
+      return;
+    }
+
     if (customId === 'ticket_close') {
       await handleTicketClose(interaction).catch(err => {
         console.error('[Ticket] Close error:', err.message);
@@ -183,10 +188,22 @@ client.on(Events.MessageCreate, async message => {
     }
   }
 
-  // Prefix command handler
-  if (!message.content.startsWith(config.prefix)) return;
+  // Respond when the bot is mentioned directly
+  if (message.mentions.users.has(client.user.id) && message.content.trim().replace(`<@${client.user.id}>`, '').trim() === '') {
+    return message.reply('Use `!help` to see commands');
+  }
 
-  const args = message.content.slice(config.prefix.length).trim().split(/ +/);
+  // Prefix command handler — supports both prefixed and prefix-free users
+  const startsWithPrefix = message.content.startsWith(config.prefix);
+  const noPrefixUser = !startsWithPrefix && hasNoPrefix(message.guildId, message.author.id);
+
+  if (!startsWithPrefix && !noPrefixUser) return;
+
+  const rawContent = startsWithPrefix
+    ? message.content.slice(config.prefix.length).trim()
+    : message.content.trim();
+
+  const args = rawContent.split(/ +/);
   const commandName = args.shift().toLowerCase();
 
   const command = client.prefixCommands.get(commandName);
